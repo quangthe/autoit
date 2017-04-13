@@ -31,6 +31,11 @@ def main(argv):
     print "groupId: ", group_id
     print "artifactId: ", artifact_id
 
+    latest_version = get_latest_version(group_id, artifact_id)
+    print latest_version
+
+
+def get_latest_version(group_id, artifact_id):
     secrete_key = os.environ['MY_SECRETE_KEY']
     header = {"Authorization": "Basic " + secrete_key}
 
@@ -45,15 +50,12 @@ def main(argv):
         r = requests.get(url, headers=header, params=params)
 
         # parse latest version
-        print r.content
         tree = etree.parse(StringIO(r.content))
-        latestVersion = tree.xpath("//latestRelease")
-        print "latestVersion: ", latestVersion[0].text
+        latest_version = tree.xpath("//latestRelease")
+        return latest_version[0].text
     except requests.exceptions.RequestException as e:
         print "Error response", e.message
-
-        # print r.text
-
+        return None
 
 if __name__ == "__main__":
     main(sys.argv[1:])
