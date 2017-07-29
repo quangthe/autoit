@@ -5,10 +5,20 @@ import os
 import requests
 from StringIO import StringIO
 from lxml import etree
-from get_latest_version import get_latest_version
+from get_latest_version import NexusHelper
+from analyze_magnolia_pom import PomAnalyzer
 
 
 def main(argv):
+    # Analyze artifacts in Magnolia core
+    meta = {}
+    analyzer = PomAnalyzer()
+    urls = ["https://git.magnolia-cms.com/projects/PLATFORM/repos/ee/browse/pom.xml",
+            "https://git.magnolia-cms.com/projects/PLATFORM/repos/ce/browse/pom.xml"]
+    for url in urls:
+        artifacts = analyzer.get_artifacts(url)
+        meta.update(artifacts)
+
     url = "https://git.magnolia-cms.com/projects/OD/repos/now-bundles/browse/magnolia-now-webapp/pom.xml"
     params = {"raw": ""}
     secrete_key = os.environ['MY_SECRETE_KEY']
@@ -16,7 +26,9 @@ def main(argv):
         "Authorization": "Basic " + secrete_key,
         "Content-Type": "application/xml"
     }
+
     try:
+        # Analyze NOW bundle pom
         r = requests.get(url, headers=header, params=params)
 
         namespaces = {'ns': 'http://maven.apache.org/POM/4.0.0'}
@@ -24,32 +36,42 @@ def main(argv):
         tree = etree.parse(StringIO(r.content), parser=parser)
         dependencies = tree.xpath("//ns:dependency", namespaces=namespaces)
 
-        f1 = open('old.txt', 'w')
-        f2 = open('new.txt', 'w')
+        file = open('result.txt', 'w')
+
+        nexus_helper = NexusHelper()
+        header = "{:<50}{:<80}{:<30}{:<25}{:<25}".format("groupId", "artifactId", "current version", "new version", "latest release")
+
+        file.write(header)
+        file.write('\n')
+        file.write("-" * 210)
+        file.write('\n')
+
+        print header
+        print "-" * 210
 
         for d in dependencies:
             group_id = d.find('ns:groupId', namespaces=namespaces).text
             artifact_id = d.find('ns:artifactId', namespaces=namespaces).text
             current_version = get_current_version(tree, d, namespaces)
 
-            f1.write("{}\n".format(group_id))
-            f1.write("{}\n".format(artifact_id))
-            f1.write("{}\n".format(current_version))
-            f1.write("\n")
+            latest_release_version = nexus_helper.get_released_version(group_id, artifact_id)
 
-            latest_version = get_latest_version(group_id=group_id, artifact_id=artifact_id)
-            f2.write("{}\n".format(group_id))
-            f2.write("{}\n".format(artifact_id))
-            f2.write("{}\n".format(latest_version))
-            f2.write("\n")
+            new_version = meta.get("{}:{}".format(group_id, artifact_id))
 
-            print "{", group_id, ", ", artifact_id, ", ", latest_version, "}"
+            record = "{:<50}{:<80}{:<30}{:<25}{:<25}".format(group_id, artifact_id, current_version, new_version, latest_release_version)
+
+            file.write(record)
+            file.write('\n')
+            print record
+
+        file.write("-" * 210)
+        file.write('\n')
+        print "-" * 210
 
     except requests.exceptions.RequestException as e:
         print "Error response", e.message
     finally:
-        f1.close()
-        f2.close()
+        file.close()
 
 
 def get_current_version(tree, dependency, namespaces):
